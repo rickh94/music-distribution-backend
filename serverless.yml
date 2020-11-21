@@ -1,0 +1,166 @@
+org: rickhenry
+app: music-distribution-app
+service: music-distribution
+
+plugins:
+  - serverless-pseudo-parameters
+  - serverless-python-requirements
+  - serverless-cf-vars
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    usePipenv: true
+    slim: true
+    slimPatterns:
+      - "**/examples*"
+      - "bin/*"
+      - "**/pydantic/*.py"
+      - "**/*.egg-info*"
+      - "**/*.pyi"
+  stage: ${opt:stage, self:provider.stage}
+  tableNames:
+    musicDistribution: music-distribution-${self:custom.stage}
+    pieces: music-distribution-pieces-${self:custom.stage}
+  tableThroughputs:
+    prod: 5
+    dev: 3
+    default: 3
+  tableThroughput: ${self:custom.tableThroughputs.${self:custom.stage}, self:custom.tableThroughputs.default}
+
+
+package:
+  exclude:
+    - ./**
+  include:
+    - app/**
+
+provider:
+  name: aws
+  runtime: python3.8
+  stage: 'dev'
+  apiGateway:
+    shouldStartNameWithService: true
+  environment:
+    MUSIC_DISTRIBUTION_TABLE_NAME: ${self:custom.tableNames.musicDistribution}
+    PIECES_TABLE_NAME: ${self:custom.tableNames.pieces}
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:PutItem
+      Resource:
+        - Fn::Sub: "#{MusicDistributionTable.Arn}"
+
+functions:
+  create:
+    handler: app/create.main
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: distribution
+          method: post
+          cors: true
+          authorizer: aws_iam
+
+  read-single:
+    handler: app/read.single
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: distribution/{id}
+          method: get
+          cors: true
+          authorizer: aws_iam
+
+  read-all:
+    handler: app/read.all_
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: distribution/all
+          method: get
+          cors: true
+          authorizer: aws_iam
+
+  update:
+    handler: app/update.main
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: distribution/{id}
+          method: put
+          cors: true
+          authorizer: aws_iam
+
+  delete:
+    handler: app/delete.main
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: distribution/{id}
+          method: delete
+          cors: true
+          authorizer: aws_iam
+
+  create-piece:
+    handler: app/pieces.create
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: pieces
+          method: post
+          cors: true
+          authorizer: aws_iam
+
+  read-pieces:
+    handler: app/pieces.read_all
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: pieces
+          method: get
+          cors: true
+          authorizer: aws_iam
+
+  update-piece:
+    handler: app/pieces.update
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: pieces/{id}
+          method: put
+          cors: true
+          authorizer: aws_iam
+
+  delete-piece:
+    handler: app/pieces.delete
+    tags:
+      CostCenter: "Music Distribution"
+    events:
+      - http:
+          path: pieces/{id}
+          method: delete
+          cors: true
+          authorizer: aws_iam
+
+
+resources:
+  - ${file(resources/api-gateway-errors.yml)}
+  - ${file(resources/cognito-user-pool.yml)}
+  - ${file(resources/cognito-identity-pool.yml)}
+  - ${file(resources/dynamodb-table.yml)}
